@@ -1,0 +1,205 @@
+diff --git a/binutils-2.25/gold/output.cc b/binutils-2.25/gold/output.cc
+index 2e30e24d..a10dbc79 100644
+--- a/binutils-2.25/gold/output.cc
++++ b/binutils-2.25/gold/output.cc
+@@ -3217,7 +3217,8 @@ class Output_section::Input_section_sort_entry
+   {
+     if ((input_section.is_input_section()
+ 	 || input_section.is_relaxed_input_section())
+-	&& must_sort_attached_input_sections)
++//	&& must_sort_attached_input_sections)
++      )
+       {
+ 	// This is only called single-threaded from Layout::finalize,
+ 	// so it is OK to lock.  Unfortunately we have no way to pass
+@@ -3544,16 +3545,36 @@ Output_section::update_section_layout(
+     }
+ }
+ 
++
++void Output_section::sort_attached_input_sections_helper(
++    std::vector<Input_section_sort_entry>& sort_list) {
++  if (this->type() == elfcpp::SHT_PREINIT_ARRAY ||
++      this->type() == elfcpp::SHT_INIT_ARRAY ||
++      this->type() == elfcpp::SHT_FINI_ARRAY)
++    std::sort(sort_list.begin(), sort_list.end(),
++              Input_section_sort_init_fini_compare());
++  else if (strcmp(parameters->options().sort_section(), "name") == 0)
++    std::sort(sort_list.begin(), sort_list.end(),
++              Input_section_sort_section_name_compare());
++  else if (strcmp(this->name(), ".text") == 0)
++    std::sort(sort_list.begin(), sort_list.end(),
++              Input_section_sort_section_prefix_special_ordering_compare());
++  else
++    std::sort(sort_list.begin(), sort_list.end(), Input_section_sort_compare());
++}
++
++void Output_section::sort_attached_input_sections_by_section_order_index(
++    std::vector<Input_section_sort_entry>& sort_list) {
++  std::sort(sort_list.begin(), sort_list.end(),
++            Input_section_sort_section_order_index_compare());
++}
++
+ // Sort the input sections attached to an output section.
+ 
+-void
+-Output_section::sort_attached_input_sections()
+-{
+-  if (this->attached_input_sections_are_sorted_)
+-    return;
++void Output_section::sort_attached_input_sections() {
++  if (this->attached_input_sections_are_sorted_) return;
+ 
+-  if (this->checkpoint_ != NULL
+-      && !this->checkpoint_->input_sections_saved())
++  if (this->checkpoint_ != NULL && !this->checkpoint_->input_sections_saved())
+     this->checkpoint_->save_input_sections();
+ 
+   // The only thing we know about an input section is the object and
+@@ -3563,48 +3584,77 @@ Output_section::sort_attached_input_sections()
+ 
+   // We start by building a larger vector holding a copy of each
+   // Input_section, plus its current index in the list and its name.
+-  std::vector<Input_section_sort_entry> sort_list;
+-
+-  unsigned int i = 0;
+-  for (Input_section_list::iterator p = this->input_sections_.begin();
+-       p != this->input_sections_.end();
+-       ++p, ++i)
+-      sort_list.push_back(Input_section_sort_entry(*p, i,
+-			    this->must_sort_attached_input_sections(),
+-			    this->name()));
+ 
+   // Sort the input sections.
+-  if (this->must_sort_attached_input_sections())
+-    {
+-      if (this->type() == elfcpp::SHT_PREINIT_ARRAY
+-	  || this->type() == elfcpp::SHT_INIT_ARRAY
+-	  || this->type() == elfcpp::SHT_FINI_ARRAY)
+-	std::sort(sort_list.begin(), sort_list.end(),
+-		  Input_section_sort_init_fini_compare());
+-      else if (strcmp(parameters->options().sort_section(), "name") == 0)
+-	std::sort(sort_list.begin(), sort_list.end(),
+-		  Input_section_sort_section_name_compare());
+-      else if (strcmp(this->name(), ".text") == 0)
+-	std::sort(sort_list.begin(), sort_list.end(),
+-		  Input_section_sort_section_prefix_special_ordering_compare());
+-      else
+-	std::sort(sort_list.begin(), sort_list.end(),
+-		  Input_section_sort_compare());
++  if (this->must_sort_attached_input_sections()) {
++    std::vector<Input_section_sort_entry> sort_list;
++    unsigned int i = 0;
++    for (Input_section_list::iterator p = this->input_sections_.begin();
++         p != this->input_sections_.end(); ++p, ++i) {
++      sort_list.push_back(Input_section_sort_entry(
++          *p, i, this->must_sort_attached_input_sections(), this->name()));
++    }
++
++    sort_attached_input_sections_helper(sort_list);
++
++    // Copy the sorted input sections back to our list.
++    this->input_sections_.clear();
++    for (std::vector<Input_section_sort_entry>::iterator p = sort_list.begin();
++         p != sort_list.end(); ++p) {
++      this->input_sections_.push_back(p->input_section());
++    }
++    sort_list.clear();
++  } else {
++    gold_assert(this->input_section_order_specified());
++    // Hack here, even we have the specified the order by
++    // --section-ordering-file= we would like to insert them just before
++    // .text.hot, rather than append to the end.
++    std::vector<Input_section_sort_entry> section_order_specified_sort_list;
++    std::vector<Input_section_sort_entry> default_section_order_sort_list;
++    unsigned int i = 0;
++
++    for (Input_section_list::iterator p = this->input_sections_.begin();
++         p != this->input_sections_.end(); ++p, ++i) {
++      if (p->section_order_index() == 0) {
++        default_section_order_sort_list.push_back(Input_section_sort_entry(
++            *p, i, this->must_sort_attached_input_sections(), this->name()));
++      } else {
++        section_order_specified_sort_list.push_back(Input_section_sort_entry(
++            *p, i, this->must_sort_attached_input_sections(), this->name()));
++      }
+     }
+-  else
+-    {
+-      gold_assert(this->input_section_order_specified());
+-      std::sort(sort_list.begin(), sort_list.end(),
+-		Input_section_sort_section_order_index_compare());
++    sort_attached_input_sections_by_section_order_index(
++        section_order_specified_sort_list);
++    sort_attached_input_sections_helper(default_section_order_sort_list);
++
++    // Copy the sorted input sections back to our list.
++    this->input_sections_.clear();
++    std::vector<Input_section_sort_entry>::iterator p =
++        default_section_order_sort_list.begin();
++
++    for (; p != default_section_order_sort_list.end(); ++p) {
++      int special_order =
++          Layout::special_ordering_of_input_section(p->section_name().c_str());
++      if ((special_order != 3) && (special_order != -1)) {
++        this->input_sections_.push_back(p->input_section());
++      } else {
++        break;
++      }
+     }
+ 
+-  // Copy the sorted input sections back to our list.
+-  this->input_sections_.clear();
+-  for (std::vector<Input_section_sort_entry>::iterator p = sort_list.begin();
+-       p != sort_list.end();
+-       ++p)
+-    this->input_sections_.push_back(p->input_section());
+-  sort_list.clear();
++    for (std::vector<Input_section_sort_entry>::iterator q =
++             section_order_specified_sort_list.begin();
++         q != section_order_specified_sort_list.end(); ++q) {
++      this->input_sections_.push_back(q->input_section());
++    }
++
++    for (; p != default_section_order_sort_list.end(); ++p) {
++      this->input_sections_.push_back(p->input_section());
++    }
++
++    section_order_specified_sort_list.clear();
++    default_section_order_sort_list.clear();
++  }
+ 
+   // Remember that we sorted the input sections, since we might get
+   // called again.
+diff --git a/binutils-2.25/gold/output.h b/binutils-2.25/gold/output.h
+index 599c2b70..0032b617 100644
+--- a/binutils-2.25/gold/output.h
++++ b/binutils-2.25/gold/output.h
+@@ -3326,6 +3326,17 @@ class Output_section : public Output_data
+     this->dynsym_index_ = index;
+   }
+ 
++  // This class is used to sort the input sections.
++  class Input_section_sort_entry;
++
++  // The section sort helper.
++  void
++  sort_attached_input_sections_helper(std::vector<Input_section_sort_entry>&);
++
++  // Sort the sections by order specified by --section-ordering-file
++  void
++  sort_attached_input_sections_by_section_order_index(std::vector<Input_section_sort_entry>&);
++
+   // Sort the attached input sections.
+   void
+   sort_attached_input_sections();
+@@ -4198,9 +4209,6 @@ class Output_section : public Output_data
+     bool attached_input_sections_are_sorted_;
+   };
+ 
+-  // This class is used to sort the input sections.
+-  class Input_section_sort_entry;
+-
+   // This is the sort comparison function for ctors and dtors.
+   struct Input_section_sort_compare
+   {
