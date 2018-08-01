@@ -1,8 +1,25 @@
-diff --git a/binutils-2.25/gold/output.cc b/binutils-2.25/gold/output.cc
-index 2e30e24d..a10dbc79 100644
---- a/binutils-2.25/gold/output.cc
-+++ b/binutils-2.25/gold/output.cc
-@@ -3217,7 +3217,8 @@ class Output_section::Input_section_sort_entry
+diff --git a/binutils-2.27/gold/layout.cc b/binutils-2.27/gold/layout.cc
+index 38d67e7..54bb3c2 100644
+--- a/binutils-2.27/gold/layout.cc
++++ b/binutils-2.27/gold/layout.cc
+@@ -1116,10 +1116,10 @@ Layout::special_ordering_of_input_section(const char* name)
+   // here.
+   static const char* const text_section_sort[] =
+   {
++    ".text.hot",
+     ".text.unlikely",
+     ".text.exit",
+-    ".text.startup",
+-    ".text.hot"
++    ".text.startup"
+   };
+ 
+   for (size_t i = 0;
+diff --git a/binutils-2.27/gold/output.cc b/binutils-2.27/gold/output.cc
+index 0a9e58f..4403938 100644
+--- a/binutils-2.27/gold/output.cc
++++ b/binutils-2.27/gold/output.cc
+@@ -3272,7 +3272,8 @@ class Output_section::Input_section_sort_entry
    {
      if ((input_section.is_input_section()
  	 || input_section.is_relaxed_input_section())
@@ -12,7 +29,7 @@ index 2e30e24d..a10dbc79 100644
        {
  	// This is only called single-threaded from Layout::finalize,
  	// so it is OK to lock.  Unfortunately we have no way to pass
-@@ -3544,16 +3545,36 @@ Output_section::update_section_layout(
+@@ -3599,16 +3600,36 @@ Output_section::update_section_layout(
      }
  }
  
@@ -56,7 +73,7 @@ index 2e30e24d..a10dbc79 100644
      this->checkpoint_->save_input_sections();
  
    // The only thing we know about an input section is the object and
-@@ -3563,48 +3584,77 @@ Output_section::sort_attached_input_sections()
+@@ -3618,48 +3639,77 @@ Output_section::sort_attached_input_sections()
  
    // We start by building a larger vector holding a copy of each
    // Input_section, plus its current index in the list and its name.
@@ -94,7 +111,12 @@ index 2e30e24d..a10dbc79 100644
 +         p != this->input_sections_.end(); ++p, ++i) {
 +      sort_list.push_back(Input_section_sort_entry(
 +          *p, i, this->must_sort_attached_input_sections(), this->name()));
-+    }
+     }
+-  else
+-    {
+-      gold_assert(this->input_section_order_specified());
+-      std::sort(sort_list.begin(), sort_list.end(),
+-		Input_section_sort_section_order_index_compare());
 +
 +    sort_attached_input_sections_helper(sort_list);
 +
@@ -123,12 +145,7 @@ index 2e30e24d..a10dbc79 100644
 +        section_order_specified_sort_list.push_back(Input_section_sort_entry(
 +            *p, i, this->must_sort_attached_input_sections(), this->name()));
 +      }
-     }
--  else
--    {
--      gold_assert(this->input_section_order_specified());
--      std::sort(sort_list.begin(), sort_list.end(),
--		Input_section_sort_section_order_index_compare());
++    }
 +    sort_attached_input_sections_by_section_order_index(
 +        section_order_specified_sort_list);
 +    sort_attached_input_sections_helper(default_section_order_sort_list);
@@ -171,11 +188,11 @@ index 2e30e24d..a10dbc79 100644
  
    // Remember that we sorted the input sections, since we might get
    // called again.
-diff --git a/binutils-2.25/gold/output.h b/binutils-2.25/gold/output.h
-index 599c2b70..0032b617 100644
---- a/binutils-2.25/gold/output.h
-+++ b/binutils-2.25/gold/output.h
-@@ -3326,6 +3326,17 @@ class Output_section : public Output_data
+diff --git a/binutils-2.27/gold/output.h b/binutils-2.27/gold/output.h
+index 6b9186b..7e3a10a 100644
+--- a/binutils-2.27/gold/output.h
++++ b/binutils-2.27/gold/output.h
+@@ -3492,6 +3492,17 @@ class Output_section : public Output_data
      this->dynsym_index_ = index;
    }
  
@@ -193,7 +210,7 @@ index 599c2b70..0032b617 100644
    // Sort the attached input sections.
    void
    sort_attached_input_sections();
-@@ -4198,9 +4209,6 @@ class Output_section : public Output_data
+@@ -4359,9 +4370,6 @@ class Output_section : public Output_data
      bool attached_input_sections_are_sorted_;
    };
  
