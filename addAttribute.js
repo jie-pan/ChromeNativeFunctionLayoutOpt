@@ -13,5 +13,6 @@ content.forEach(function(item, index, array) {
   console.log(item);
   var hot = item.replace(/^[ ]*\.text/, '$&' + '.hot');
   console.log(hot);
+  var cold = item.replace(/^[ ]*\.text/, '$&' + '.unlikely');
+  console.log(cold);
 });
-
